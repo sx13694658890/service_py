@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import uuid
 
 from sqlalchemy import insert, select
@@ -22,6 +24,24 @@ async def get_role_codes_for_user(db: AsyncSession, user_id: uuid.UUID) -> list[
         .order_by(Role.code),
     )
     return list(result.scalars().all())
+
+
+async def get_role_codes_map_for_users(
+    db: AsyncSession,
+    user_ids: list[uuid.UUID],
+) -> dict[uuid.UUID, list[str]]:
+    if not user_ids:
+        return {}
+    result = await db.execute(
+        select(user_roles_table.c.user_id, Role.code)
+        .join(Role, user_roles_table.c.role_id == Role.uid)
+        .where(user_roles_table.c.user_id.in_(user_ids))
+        .order_by(user_roles_table.c.user_id, Role.code),
+    )
+    out: dict[uuid.UUID, list[str]] = {uid: [] for uid in user_ids}
+    for user_id, role_code in result.all():
+        out[user_id].append(role_code)
+    return out
 
 
 async def assign_default_role_to_user(db: AsyncSession, user: User) -> None:

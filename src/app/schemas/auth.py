@@ -28,3 +28,12 @@ class RegisterResponse(BaseModel):
 
     user_id: uuid.UUID
     email: str
+
+
+class ChangePasswordRequest(BaseModel):
+    current_password: str = Field(..., min_length=1, description="当前密码")
+    new_password: str = Field(..., min_length=6, max_length=256, description="新密码（至少 6 位）")
+
+
+class MessageResponse(BaseModel):
+    message: str

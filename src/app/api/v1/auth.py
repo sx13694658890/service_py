@@ -1,3 +1,4 @@
+import logging
 import uuid
 from datetime import timedelta
 
@@ -5,14 +6,25 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.auth_deps import AuthUser, get_current_auth_user
 from app.core.config import settings
 from app.core.db import get_db
 from app.core.db_errors import is_users_email_unique_violation
 from app.core.security import create_access_token, hash_password, verify_password
 from app.models.user import User
-from app.schemas.auth import LoginRequest, RegisterRequest, RegisterResponse, TokenResponse
+from app.schemas.auth import (
+    ChangePasswordRequest,
+    LoginRequest,
+    MessageResponse,
+    RegisterRequest,
+    RegisterResponse,
+    TokenResponse,
+)
+from app.services.message_repo import create_message_and_dispatch
 from app.services.roles_repo import assign_default_role_to_user, get_role_codes_for_user
-from app.services.user_repo import get_user_by_email
+from app.services.user_repo import get_user_by_email, get_user_by_id, update_user_password
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -91,3 +103,48 @@ async def login(body: LoginRequest, db: AsyncSession = Depends(get_db)) -> Token
         access_token=token,
         expires_in=int(expires.total_seconds()),
     )
+
+
+@router.post(
+    "/change-password",
+    response_model=MessageResponse,
+    summary="修改当前用户密码",
+    responses={
+        401: {"description": "未登录或当前密码错误"},
+        400: {"description": "新密码与当前密码相同"},
+        404: {"description": "用户不存在"},
+    },
+)
+async def change_password(
+    body: ChangePasswordRequest,
+    current: AuthUser = Depends(get_current_auth_user),
+    db: AsyncSession = Depends(get_db),
+) -> MessageResponse:
+    user = await get_user_by_id(db, current.user_id)
+    if user is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="用户不存在")
+
+    if not verify_password(body.current_password, user.password_hash):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="当前密码错误")
+
+    if body.current_password == body.new_password:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="新密码不能与当前密码相同",
+        )
+
+    await update_user_password(db, user, body.new_password)
+    try:
+        await create_message_and_dispatch(
+            db,
+            user_ids=[current.user_id],
+            category="security",
+            title="密码已更新",
+            content="您的账户密码刚刚已修改。如非本人操作，请立即联系管理员。",
+            payload={"kind": "password_changed"},
+            priority="high",
+            created_by=current.user_id,
+        )
+    except Exception:
+        logger.exception("改密后站内通知投递失败")
+    return MessageResponse(message="密码已更新")
