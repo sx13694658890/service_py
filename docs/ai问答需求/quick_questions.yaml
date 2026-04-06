@@ -1,0 +1,24 @@
+# 快捷问题：id 供接口 quick_question_id；label 供前端展示；retrieval_query 用于知识库检索加权
+items:
+  - id: what_is_it
+    label: "这是什么?有什么用?"
+    retrieval_query: "产品 功能 用途 介绍 AI 助手"
+  - id: how_to_use
+    label: "要怎么用?"
+    retrieval_query: "使用 步骤 操作 说明"
+  - id: not_working
+    label: "我用不了"
+    retrieval_query: "故障 无法使用 排查 订阅"
+  - id: paid_no_package
+    label: "我付了钱没收到套餐"
+    retrieval_query: "支付 套餐 订单 未到账"
+  - id: site_pc
+    label: "网站在电脑打不开"
+    retrieval_query: "浏览器 无法打开 网站 电脑"
+  - id: transfer_human
+    label: "转人工"
+    graph_route: human_handoff
+    retrieval_query: "人工 客服"
+  - id: update_subscription
+    label: "怎么更新订阅"
+    retrieval_query: "更新 订阅 导入"
