@@ -23,4 +23,26 @@ uv run serve
 uv run python -c "from app.core.security import hash_password; print(hash_password('你的密码'))"
 ```
 
+## 生成前端联调用消息数据
+
+已提供脚本：`scripts/seed_demo_messages.py`，会向指定用户插入一批站内通知（含已读/未读、不同 `category` 和 `priority`），用于前端页面联调。
+
+执行方式（在项目根目录 `server_python` 下）：
+
+```bash
+PYTHONPATH=src uv run python scripts/seed_demo_messages.py 你的邮箱@example.com
+```
+
+也可用环境变量：
+
+```bash
+SEED_DEMO_MESSAGES_EMAIL=你的邮箱@example.com PYTHONPATH=src uv run python scripts/seed_demo_messages.py
+```
+
+说明：
+
+- 脚本可重复执行；会先删除该用户 `payload.seed == "frontend_demo"` 的旧演示消息，再重新插入新数据。
+- 若邮箱不存在（用户未注册），脚本会提示并退出。
+- 运行前请确保已执行数据库迁移（包含 `messages` / `user_messages` 表）。
+
 浏览器打开 <http://127.0.0.1:8000/docs>。
