@@ -1,42 +1,51 @@
 # 文档中心 · 开发说明
 
-产品/交互需求见 [REQUIREMENTS.md](./REQUIREMENTS.md)。前端实现要点见 [FRONTEND_IMPL.md](./FRONTEND_IMPL.md)。
+需求摘要见 [REQUIREMENTS.md](./REQUIREMENTS.md)。前端对接见 [FRONTEND_IMPL.md](./FRONTEND_IMPL.md)。
 
 ---
 
-## 1. 范围
+## 1. 正文来源
 
-对齐需求文档中的文档主页：列表区、卡片字段、预览与无权限态（`REQUIREMENTS.md` §3.4–§3.5、§4）；不含在线编辑、复杂权限后台。
+- 仓库根下 **`docs/`** 目录存放 Markdown（及子目录）。
+- 表 `help_documents.docs_relpath`：**相对 `docs/` 的路径**，正斜杠，无前导 `/`，例如 `文档需求/DEV_PLAN.md`。
+- 读取优先级：`docs_relpath` 指向的文件存在则读文件；否则回退列 `body`（兼容旧数据）。
 
 ---
 
-## 2. 接口约定
+## 2. 接口
 
 ### 列表
 
 - `GET /api/v1/docs`
-- Query：`limit`、`offset`、`keyword`（可选，标题/摘要模糊匹配）
+- Query：`limit`、`offset`、`keyword`（可选）、`category`（可选，精确匹配分类）
 
-### 详情（预览）
+响应项：需求中的列表字段 + 当 `can_view=true` 时：
+- `content_url`：如 `/api/v1/docs/{id}/content`，前端用 **Bearer** 请求以取正文。
+- `docs_relpath`：库中路径，便于展示或排查。
 
-- `GET /api/v1/docs/{id}`
-- 前端路由可与现有工程一致，例如 `/dashboard/docs/:id`
+### 详情（JSON，含内联正文）
 
-### 响应字段（列表项）
+- `GET /api/v1/docs/{id}`  
+- 成功时含 `body`（已解析后的 Markdown 文本）、`content_url`、`docs_relpath`。
 
-与需求 §4.1 一致：`id`、`title`、`summary`、`category`、`score`、`tags`、`created_at`、`updated_at`、`can_view`。列表外层：`items`、`total`。
+### 仅正文（便于单独请求或 `<iframe>`/下载）
 
-### 权限
+- `GET /api/v1/docs/{id}/content`  
+- `Content-Type: text/markdown; charset=utf-8`
 
-- 未登录：`401`
-- 无查看权限：列表中对应项 `can_view=false`；详情请求 `403`
+### 权限与安全
 
-OpenAPI 由服务自动生成，供联调对照。
+- 未登录：`401`；无权限：列表 `can_view=false`，详情/正文：`403`。
+- 服务端解析路径时**禁止** `..` 跳出 `docs/`（路径遍历防护）。
+
+### OpenAPI
+
+由服务自动生成，供联调。
 
 ---
 
-## 3. 验收要点（对应需求 §6）
+## 3. 验收要点
 
-- 进入页面可见文档列表；分页参数正确。
-- 有权限可预览/看详情；无权限有禁用或提示，不误进详情。
-- 接口失败或非空列表异常时有可见提示，而非空白页。
+- 有权限时列表 `content_url` 可拉取到与 `docs/` 文件一致的正文。
+- 无权限时不暴露 `content_url` / `docs_relpath`。
+- 文件缺失且无 `body` 回退时：详情与正文接口返回 `404`（文案：文档正文不可用）。

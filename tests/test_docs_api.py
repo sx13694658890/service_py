@@ -17,6 +17,7 @@ def test_docs_requires_auth() -> None:
     client = TestClient(app)
     assert client.get("/api/v1/docs").status_code == 401
     assert client.get(f"/api/v1/docs/{uuid.uuid4()}").status_code == 401
+    assert client.get(f"/api/v1/docs/{uuid.uuid4()}/content").status_code == 401
 
 
 def test_docs_list_success(monkeypatch) -> None:
@@ -39,6 +40,7 @@ def test_docs_list_success(monkeypatch) -> None:
         score=4.8,
         tags=["E", "C"],
         required_role_codes=None,
+        docs_relpath=None,
         body="x",
         created_at=ts,
         updated_at=ts,
@@ -73,6 +75,8 @@ def test_docs_list_success(monkeypatch) -> None:
     assert it["id"] == str(did)
     assert it["title"] == "Windows教程"
     assert it["can_view"] is True
+    assert it["content_url"] == f"/api/v1/docs/{did}/content"
+    assert it["docs_relpath"] is None
 
 
 def test_docs_list_keyword_passed(monkeypatch) -> None:
@@ -167,6 +171,7 @@ def test_docs_list_can_view_false_without_role(monkeypatch) -> None:
         score=None,
         tags=None,
         required_role_codes=["admin"],
+        docs_relpath="secret.md",
         body="secret",
         created_at=ts,
         updated_at=ts,
@@ -188,7 +193,10 @@ def test_docs_list_can_view_false_without_role(monkeypatch) -> None:
         app.dependency_overrides.clear()
 
     assert r.status_code == 200
-    assert r.json()["items"][0]["can_view"] is False
+    item = r.json()["items"][0]
+    assert item["can_view"] is False
+    assert item["content_url"] is None
+    assert item["docs_relpath"] is None
 
 
 def test_doc_detail_not_found(monkeypatch) -> None:
@@ -276,6 +284,7 @@ def test_doc_detail_ok(monkeypatch) -> None:
         score=3.0,
         tags=["x"],
         required_role_codes=None,
+        docs_relpath=None,
         body="正文",
         created_at=ts,
         updated_at=ts,
@@ -296,3 +305,46 @@ def test_doc_detail_ok(monkeypatch) -> None:
     b = r.json()
     assert b["body"] == "正文"
     assert b["can_view"] is True
+    assert b["content_url"] == f"/api/v1/docs/{doc_id}/content"
+
+
+def test_doc_content_ok(monkeypatch) -> None:
+    client = TestClient(app)
+    uid = uuid.UUID("11111111-1111-1111-1111-111111111111")
+    doc_id = uuid.UUID("ffffffff-ffff-ffff-ffff-ffffffffffff")
+    ts = datetime(2026, 4, 1, tzinfo=timezone.utc)
+
+    async def _fake_db():
+        yield _DummyDB()
+
+    async def _fake_current():
+        return AuthUser(user_id=uid, email="me@example.com", roles=["user"])
+
+    doc = SimpleNamespace(
+        id=doc_id,
+        title="公开",
+        summary="s",
+        category=None,
+        score=None,
+        tags=None,
+        required_role_codes=None,
+        docs_relpath=None,
+        body="# hi",
+        created_at=ts,
+        updated_at=ts,
+    )
+
+    async def _fake_get(_db, _doc_id):
+        return doc
+
+    app.dependency_overrides[get_db] = _fake_db
+    app.dependency_overrides[get_current_auth_user] = _fake_current
+    monkeypatch.setattr("app.api.v1.docs.get_help_document_by_id", _fake_get)
+    try:
+        r = client.get(f"/api/v1/docs/{doc_id}/content")
+    finally:
+        app.dependency_overrides.clear()
+
+    assert r.status_code == 200
+    assert r.text == "# hi"
+    assert "text/markdown" in r.headers.get("content-type", "")

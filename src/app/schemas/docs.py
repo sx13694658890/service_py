@@ -18,6 +18,10 @@ class DocListItemOut(BaseModel):
     can_view: bool
     created_at: datetime
     updated_at: datetime
+    # 有权限时：拉取正文用（需带 Bearer）；相对站点根路径
+    content_url: str | None = None
+    # 有权限时：相对仓库 docs/ 的路径，便于展示或排查
+    docs_relpath: str | None = None
 
 
 class DocListResponse(BaseModel):
@@ -37,4 +41,6 @@ class DocDetailOut(BaseModel):
     can_view: bool
     created_at: datetime
     updated_at: datetime
+    content_url: str | None = None
+    docs_relpath: str | None = None
     body: str | None = None

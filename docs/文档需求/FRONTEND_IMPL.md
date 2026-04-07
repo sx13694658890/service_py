@@ -48,14 +48,17 @@
 
 ## 4. API 对接方案
 
+正文来自服务端读取仓库 `docs/` 下文件；列表/详情在 `can_view=true` 时返回 `content_url`（如 `/api/v1/docs/{id}/content`），需带 **Authorization: Bearer**。细则见 [DEV_PLAN.md](./DEV_PLAN.md)。
+
 ### 4.1 API 封装
 
 建议新增：`packages/api/src/apis/docs.api.ts`
 
 建议方法：
 
-- `list(params)` -> `GET /api/v1/docs`
-- `detail(id)` -> `GET /api/v1/docs/{id}`（若后端提供）
+- `list(params)` -> `GET /api/v1/docs`（支持 `limit` / `offset` / `keyword` / `category`）
+- `detail(id)` -> `GET /api/v1/docs/{id}`（JSON，含 `body`）
+- `content(id)` -> `GET` 列表项中的 `content_url`（或拼 `{apiBase}{content_url}`），`responseType: 'text'`，得到 Markdown 原文
 
 ### 4.2 类型定义（示例）
 
@@ -68,7 +71,12 @@ export interface DocListItem {
   score?: number;
   tags?: string[];
   can_view: boolean;
+  created_at?: string;
   updated_at?: string;
+  /** 有权限时存在，拉取正文 */
+  content_url?: string;
+  /** 有权限时存在，相对服务端仓库 docs/ 的路径 */
+  docs_relpath?: string;
 }
 
 export interface DocListResponse {
