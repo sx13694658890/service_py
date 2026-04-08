@@ -1,9 +1,26 @@
+from pathlib import Path
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+def _repo_root() -> Path:
+    """定位含 pyproject.toml 的仓库根，避免在子目录（如 deploy/titiler）运行时只读到该目录下的 .env。"""
+    for d in Path(__file__).resolve().parents:
+        if (d / "pyproject.toml").is_file():
+            return d
+    raise RuntimeError("无法定位仓库根目录（未找到 pyproject.toml）")
+
+
+# 先读仓库根 .env，再读当前工作目录 .env（后者可覆盖前者）；环境变量仍优先生效
+_ENV_FILES = (
+    _repo_root() / ".env",
+    Path(".env"),
+)
 
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=_ENV_FILES,
         env_file_encoding="utf-8",
         extra="ignore",
     )
