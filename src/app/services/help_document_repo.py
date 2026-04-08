@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import uuid
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.help_document import HelpDocument
@@ -64,3 +64,16 @@ async def list_help_documents_page(
 async def get_help_document_by_id(db: AsyncSession, doc_id: uuid.UUID) -> HelpDocument | None:
     r = await db.execute(select(HelpDocument).where(HelpDocument.id == doc_id))
     return r.scalar_one_or_none()
+
+
+async def insert_help_document(db: AsyncSession, doc: HelpDocument) -> HelpDocument:
+    db.add(doc)
+    await db.commit()
+    await db.refresh(doc)
+    return doc
+
+
+async def delete_help_document_row(db: AsyncSession, doc_id: uuid.UUID) -> bool:
+    r = await db.execute(delete(HelpDocument).where(HelpDocument.id == doc_id))
+    await db.commit()
+    return (r.rowcount or 0) > 0

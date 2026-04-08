@@ -93,9 +93,10 @@ def human_handoff_reply(_state: ChatGraphState) -> dict[str, Any]:
 def _format_kb_excerpt(chunks: list[dict[str, Any]]) -> str:
     if not chunks:
         return "（当前无高相关度知识库摘录，请如实说明不确定之处。）"
+    lim = settings.ai_kb_excerpt_chars
     parts: list[str] = []
     for c in chunks:
-        body = str(c.get("text", ""))[:1500]
+        body = str(c.get("text", ""))[:lim]
         title = c.get("title", "")
         sp = c.get("source_path", "")
         parts.append(f"### {title} ({sp})\n{body}")
@@ -123,11 +124,13 @@ def sources_payload(state: ChatGraphState) -> list[dict[str, str]]:
     route = state.get("route", "answer")
     if route == "human_handoff":
         return []
+    bundle = get_knowledge_bundle()
+    prefix = bundle.source_prefix or "docs/knowledge-base/"
     chunks = state.get("retrieved_chunks") or []
     return [
         {
             "title": str(c.get("title", "")),
-            "path": f"docs/ai问答需求/{c.get('source_path', '')}",
+            "path": f"{prefix}{c.get('source_path', '')}",
         }
         for c in chunks
     ]

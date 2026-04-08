@@ -1,5 +1,5 @@
-# 快捷问题：id 供接口 quick_question_id；label 供前端展示；retrieval_query 用于知识库检索加权
-# 默认知识库已迁至 docs/knowledge-base/；若使用 AI_KNOWLEDGE_DIR 指向本目录，请与此处 yaml 保持同步或改指向 knowledge-base。
+# 快捷问题：id 供接口 quick_question_id；label 供前端展示；
+# retrieval_query 会与用户问题拼接后参与知识库检索加权
 items:
   - id: what_is_it
     label: "这是什么?有什么用?"

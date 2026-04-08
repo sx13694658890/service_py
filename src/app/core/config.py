@@ -23,6 +23,16 @@ class Settings(BaseSettings):
     ai_chat_model: str = "deepseek-chat"
     ai_knowledge_dir: str | None = None
     ai_top_k: int = 5
+    # 知识库切块与检索（BM25）
+    ai_kb_chunk_max_chars: int = 4000  # 超长 ## 节按段落再切
+    ai_kb_min_score_ratio: float = 0.12  # 相对最高分比例下限，0=关闭
+    ai_kb_max_per_path: int = 2  # 同一路径最多入选块数
+    ai_kb_excerpt_chars: int = 3500  # 单块带入 LLM 的最大字符数
+
+    # 文档中心：上传文件目录（默认 <项目根>/static/help_documents，由 StaticFiles 对外提供）
+    help_docs_upload_dir: str | None = None
+    # 浏览器可匿名访问的上传文件 URL 前缀（与 main 中 mount 一致）
+    help_docs_static_mount_path: str = "/static/help-documents"
 
     @property
     def sqlalchemy_database_uri(self) -> str:

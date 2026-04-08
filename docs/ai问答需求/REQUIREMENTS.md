@@ -121,6 +121,7 @@
 |------|------|
 | [REQUIREMENTS.md](./REQUIREMENTS.md) | 本文：需求说明 |
 | [DEV_PLAN.md](./DEV_PLAN.md) | 开发计划与里程碑 |
+| [../knowledge-base/README.md](../knowledge-base/README.md) | **AI 知识库**维护说明与目录约定 |
 | [../FRONTEND.md](../FRONTEND.md) | 前端与后端通用对接约定 |
 
 ---

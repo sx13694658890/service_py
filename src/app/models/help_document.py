@@ -27,6 +27,8 @@ class HelpDocument(Base):
     required_role_codes: Mapped[list[str] | None] = mapped_column(JSONB, nullable=True)
     # 仓库 docs/ 下相对路径，如 文档需求/REQUIREMENTS.md；正文优先从此文件读取
     docs_relpath: Mapped[str | None] = mapped_column(String(512), nullable=True, index=True)
+    # 上传文件相对 help_docs 上传根目录，如 {uuid}.md；与 docs_relpath 二选一为主存储
+    upload_storage_path: Mapped[str | None] = mapped_column(String(512), nullable=True, index=True)
     body: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

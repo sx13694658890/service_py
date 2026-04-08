@@ -11,7 +11,8 @@
 
 - `docs-welcome-banner.tsx`：欢迎提示条。
 - `doc-card-list.tsx`：卡片列表容器。
-- `doc-card-item.tsx`：单卡片（标题、摘要、标签、操作）。
+- `doc-card-item.tsx`：单卡片；展示 **文档标题**（`title`）、**简单描述**（`summary`）、**上传时间**（`created_at`，可格式化为本地时间）、标签/评分、**查看/预览**；可按 `content_source` 显示角标（可选）。
+- `doc-detail-view.tsx`（或路由页）：详情内渲染 `body`（Markdown）或内嵌 `content_url` 拉流；展示 `created_at` / `updated_at`。
 
 ### 2.3 状态组件
 
@@ -19,50 +20,78 @@
 - `docs-empty-state.tsx`：空态。
 - `docs-error-state.tsx`：错误态与重试。
 
+### 2.4 上传（管理员）
+
+- `doc-upload-modal.tsx`：仅 **`admin`** 可见；表单字段与后端对齐：
+  - **文档标题** → `title`（必填）
+  - **简单描述** → 推荐提交 **`description`**（可选）；兼容旧字段 **`summary`**（仅当未填 `description` 时使用）
+  - **文件** → `file`（`.md` / `.docx`）
+  - `category`、`tags`（JSON 字符串）可选
+- 上传成功响应含 **`created_at` / `updated_at`**，可用于 toast 或列表首条展示校验。
+- `accept`：`.md,.docx`；提示 **.docx 转 Markdown 为近似转换**。
+
+### 2.5 删除（管理员）
+
+- 列表卡片或详情页：当 **`can_delete === true`** 时展示「删除」；二次确认后调用 **`DELETE /api/v1/docs/{id}`**，成功 `204` 后 **刷新列表** 或返回列表页。
+
 ---
 
 ## 3. 数据流与状态管理
 
 ### 3.1 推荐状态
 
-- `query`: `limit`、`offset`、`keyword`
-- `list`: 文档项数组
-- `total`: 总数
-- `loading`: 加载态
-- `error`: 错误信息
-- `activeMenuKey`: 当前左侧选中项
+- `query`: `limit`、`offset`、`keyword`、`category`
+- `list`、`total`、`loading`、`error`、`activeMenuKey`
+- `uploadOpen` / `uploadSubmitting`
 
 ### 3.2 请求策略
 
-- 页面首次进入：拉取第一页列表。
-- 点击刷新：重新请求当前参数。
-- 切换菜单：重置 `offset=0` 并重新拉取。
+- 首次进入 / 刷新 / 切换分类：拉列表。
+- 上传成功、删除成功：**重新拉取列表**（或局部更新，以服务端为准）。
 
 ### 3.3 与通知模块联动（可选）
 
-- 顶部通知图标可复用现有 `messages` 未读数接口：
-  - `GET /api/v1/messages/unread-count`
-- 点击通知入口可打开已有通知抽屉（若项目已实现）。
+- `GET /api/v1/messages/unread-count` 等，同前。
 
 ---
 
 ## 4. API 对接方案
 
-正文来自服务端读取仓库 `docs/` 下文件；列表/详情在 `can_view=true` 时返回 `content_url`（如 `/api/v1/docs/{id}/content`），需带 **Authorization: Bearer**。细则见 [DEV_PLAN.md](./DEV_PLAN.md)。
+列表/详情需 **Bearer**；**查看** 用 `detail` + `content` 之一即可（详情已含 `body` 时可减少一次请求）。详见 [DEV_PLAN.md](./DEV_PLAN.md)。
 
 ### 4.1 API 封装
 
-建议新增：`packages/api/src/apis/docs.api.ts`
+建议 `packages/api/src/apis/docs.api.ts`：
 
-建议方法：
+- `list` → `GET /api/v1/docs`
+- `detail(id)` → `GET /api/v1/docs/{id}`（**查看**主路径：标题、描述、时间、`body`）
+- `content(id)` → `GET .../content`（仅需原文时）
+- `upload(formData)` → `POST /api/v1/docs/upload`（字段含 `title`、`description` 或 `summary`、`file` 等）
+- **`remove(id)`** → `DELETE /api/v1/docs/{id}`（**204**，无 body）
 
-- `list(params)` -> `GET /api/v1/docs`（支持 `limit` / `offset` / `keyword` / `category`）
-- `detail(id)` -> `GET /api/v1/docs/{id}`（JSON，含 `body`）
-- `content(id)` -> `GET` 列表项中的 `content_url`（或拼 `{apiBase}{content_url}`），`responseType: 'text'`，得到 Markdown 原文
+**上传请求必须是 `multipart/form-data`（不要用 JSON）**。常见 422：`file`、`title` 缺失，多为误用 `JSON.stringify`、或手动设置了 `Content-Type: multipart/form-data` 导致没有 `boundary`。正确写法示例：
+
+```ts
+const fd = new FormData();
+fd.append('title', title);
+if (description) fd.append('description', description);
+fd.append('file', file); // 字段名必须是 file，值为 File / Blob
+
+await fetch('/api/v1/docs/upload', {
+  method: 'POST',
+  headers: { Authorization: `Bearer ${token}` },
+  body: fd,
+});
+// 不要设置 Content-Type，由浏览器自动带 boundary
+```
+
+若误发 `application/json`，接口会返回 **415** 及说明；仍为 422 时响应体可能含 **`hint`** 字段。
 
 ### 4.2 类型定义（示例）
 
 ```ts
+export type DocContentSource = 'repo' | 'upload' | 'inline';
+
 export interface DocListItem {
   id: string;
   title: string;
@@ -71,82 +100,84 @@ export interface DocListItem {
   score?: number;
   tags?: string[];
   can_view: boolean;
-  created_at?: string;
-  updated_at?: string;
-  /** 有权限时存在，拉取正文 */
+  /** 创建/上传时间 */
+  created_at: string;
+  updated_at: string;
+  content_source: DocContentSource;
   content_url?: string;
-  /** 有权限时存在，相对服务端仓库 docs/ 的路径 */
   docs_relpath?: string;
+  /** admin 时可展示删除 */
+  can_delete: boolean;
 }
 
 export interface DocListResponse {
   items: DocListItem[];
   total: number;
 }
+
+export interface DocUploadResult {
+  id: string;
+  title: string;
+  summary: string;
+  category?: string | null;
+  created_at: string;
+  updated_at: string;
+}
 ```
 
 ### 4.3 错误处理
 
-- 401：走全局拦截，清会话并跳登录。
-- 4xx/5xx：本页展示 `ErrorState`，支持“重新加载”。
+- 401：清会话、跳登录。
+- 403：无预览权 / 非 admin 上传或删除 → 对应提示。
+- 删除 `404`：文档已不存在，刷新列表。
+- 上传 413/422：展示 `detail`。
 
 ---
 
 ## 5. 交互细节
 
-### 5.1 文档卡片
+### 5.1 查看
 
-- 点击标题或“预览”：
-  - `can_view=true`：跳转详情页
-  - `can_view=false`：提示“暂无访问权限”
+- `can_view=true`：进入详情或打开预览（Markdown 渲染）。
+- `can_view=false`：禁用预览并提示。
 
-### 5.2 标签/评分区
+### 5.2 删除
 
-- 若 `tags` 存在则展示；
-- 若 `score` 为空则隐藏评分星标，避免假数据。
+- 仅 **`can_delete`** 时显示删除；确认文案需明确不可恢复（上传文件会一并删除）。
 
-### 5.3 顶部刷新
+### 5.3 上传
 
-- 点击刷新按钮触发 `refetch`；
-- 刷新时按钮可加 loading 态，防止重复点击。
+- 标题必填；描述选填；展示 **上传成功时间** 可用响应中的 `created_at`。
 
 ---
 
 ## 6. 样式与布局建议
 
-- 页面主体最大宽度跟随现有 Dashboard 容器。
-- 卡片圆角、阴影、边框与现有视觉体系一致。
-- 文案过长时：
-  - 标题最多 2 行；
-  - 摘要最多 2 行并省略。
-- 断点建议：
-  - `>= 1366`：完整三栏
-  - `< 1200`：侧栏可折叠
+- 卡片：标题 ≤2 行，描述 ≤2 行；时间用小字号次要色。
+- 其余同前（Dashboard 宽度、圆角、断点）。
 
 ---
 
 ## 7. 验收清单（前端）
 
-- [ ] 页面结构与截图主信息架构一致。
-- [ ] 左侧导航可切换并正确高亮。
-- [ ] 文档卡片渲染完整，预览可点击。
-- [ ] 顶部刷新、用户菜单可交互。
-- [ ] 空态/错态/加载态均可见。
-- [ ] 联调后字段缺失不崩溃（有兜底）。
+- [ ] 列表展示 **标题、描述、上传时间**。
+- [ ] **查看** 详情/正文正确。
+- [ ] **admin**：上传表单字段齐全，成功后有时间与列表刷新。
+- [ ] **admin**：`can_delete` 为真时可删除，`204` 后列表更新。
+- [ ] 非 admin 无删除入口；无上传入口或接口 403 有提示。
 
 ---
 
 ## 8. 实施顺序（前端）
 
-1. 先完成静态布局与组件拆分。
-2. 接入 API 与状态管理。
-3. 补齐异常态与权限态。
-4. 联调通知入口（可选）。
-5. 回归自测并修复样式细节。
+1. 布局与列表卡片（含时间、描述）。
+2. 详情 **查看** 与 Markdown 渲染。
+3. 管理员上传（`title` + `description`/`summary` + `file`）。
+4. 管理员删除（`can_delete` + `DELETE`）。
+5. 异常态与联调。
 
 ---
 
 ## 9. 备注
 
-- 本方案严格基于当前截图做结构规划，不代表最终视觉稿。
-- 视觉细节（字号、色值、图标）建议在 UI 稿确定后统一收敛。
+- 视觉以 UI 稿为准；字段与后端 OpenAPI 保持一致。
