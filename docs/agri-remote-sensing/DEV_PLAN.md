@@ -154,3 +154,4 @@ apps/web/src/
 - 需求变更请更新 `REQUIREMENTS.md` 并同步本文件里程碑与接口表。
 - OpenAPI 定稿后可在 `docs/agri-remote-sensing/` 下增加 `openapi-notes.md` 链接到生成物。
 - TiTiler 前端对接见 [TITILER_FRONTEND.md](./TITILER_FRONTEND.md)；独立部署见 [TITILER_STANDALONE.md](./TITILER_STANDALONE.md)。
+- 农业遥感演示数据结构见 [DATA_MODEL_DEMO.md](./DATA_MODEL_DEMO.md)。
