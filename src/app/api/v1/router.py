@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.v1.agri import router as agri_router
 from app.api.v1.ai_chat import router as ai_chat_router
 from app.api.v1.auth import router as auth_router
 from app.api.v1.docs import router as docs_router
@@ -15,6 +16,7 @@ router.include_router(ai_chat_router)
 router.include_router(users_router)
 router.include_router(messages_router)
 router.include_router(docs_router)
+router.include_router(agri_router)
 
 
 @router.get("/ping", summary="连通性测试（不访问数据库）")

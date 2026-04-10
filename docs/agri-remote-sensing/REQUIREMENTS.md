@@ -152,4 +152,4 @@
 
 - 技术选型与实施步骤见同目录 [DEV_PLAN.md](./DEV_PLAN.md)。
 - TiTiler 与前端地图对接见 [TITILER_FRONTEND.md](./TITILER_FRONTEND.md)；**独立容器部署**见 [TITILER_STANDALONE.md](./TITILER_STANDALONE.md)。
-- 演示页聚合数据结构（地块 GeoJSON + 时序）见 [DATA_MODEL_DEMO.md](./DATA_MODEL_DEMO.md)。
+- 演示页聚合数据结构见 [DATA_MODEL_DEMO.md](./DATA_MODEL_DEMO.md)；**HTTP 接口与前端对接**见 [FRONTEND_API_AGRI.md](./FRONTEND_API_AGRI.md)。
