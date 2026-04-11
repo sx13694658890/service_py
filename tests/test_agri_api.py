@@ -11,6 +11,7 @@ from fastapi.testclient import TestClient
 
 from app.core.auth_deps import AuthUser, get_current_auth_user
 from app.core.db import get_db
+from app.geo.polygon_area import polygon_area_hectares_wgs84
 from app.main import app
 
 REGION_ID = uuid.UUID("a1000001-0001-4001-8001-000000000001")
@@ -41,6 +42,15 @@ _GEOM = {
         "coordinates": [[[123.52, 42.08], [123.58, 42.08], [123.58, 42.12], [123.52, 42.12], [123.52, 42.08]]],
     },
 }
+
+def _evi_from_ndvi(n: float) -> float:
+    return round(min(1.2, max(-0.2, 2.5 * (n - 0.2))), 4)
+
+
+def _ndwi_from_ndvi(n: float, salt: int) -> float:
+    base = 0.55 * n - 0.22 + (salt % 9) * 0.015
+    return round(min(0.78, max(-0.62, base)), 4)
+
 
 _TS: dict[str, list[tuple[str, float, str]]] = {
     "p1": [
@@ -91,18 +101,34 @@ class _DummyDB:
 
 def _build_demo_region() -> SimpleNamespace:
     parcels: list[SimpleNamespace] = []
+    salt = 0
     for code, name, crop, area_s, latest in _PARCEL_ROWS:
         pid = PID[code]
-        observations = [
-            SimpleNamespace(
-                parcel_id=pid,
-                index_key="ndvi",
-                obs_date=date.fromisoformat(d),
-                value=v,
-                quality=q,
+        salt += 1
+        observations = []
+        for d, v, q in _TS[code]:
+            od = date.fromisoformat(d)
+            observations.append(
+                SimpleNamespace(parcel_id=pid, index_key="ndvi", obs_date=od, value=v, quality=q)
             )
-            for d, v, q in _TS[code]
-        ]
+            observations.append(
+                SimpleNamespace(
+                    parcel_id=pid,
+                    index_key="evi",
+                    obs_date=od,
+                    value=_evi_from_ndvi(v),
+                    quality=q,
+                )
+            )
+            observations.append(
+                SimpleNamespace(
+                    parcel_id=pid,
+                    index_key="ndwi",
+                    obs_date=od,
+                    value=_ndwi_from_ndvi(v, salt + od.day),
+                    quality=q,
+                )
+            )
         parcels.append(
             SimpleNamespace(
                 id=pid,
@@ -122,6 +148,11 @@ def _build_demo_region() -> SimpleNamespace:
         index_key="ndvi",
         demo=True,
         map_options=None,
+        supported_indices=[
+            {"key": "ndvi", "label": "NDVI"},
+            {"key": "evi", "label": "EVI"},
+            {"key": "ndwi", "label": "NDWI"},
+        ],
         updated_at=datetime(2026, 4, 1, tzinfo=timezone.utc),
         parcels=parcels,
     )
@@ -186,6 +217,60 @@ def agri_client(monkeypatch: pytest.MonkeyPatch) -> TestClient:
     monkeypatch.setattr("app.api.v1.agri.agri_repo.get_parcel_by_region_and_code", _get_parcel)
     monkeypatch.setattr("app.api.v1.agri.agri_repo.load_parcel_observations", _load_obs)
 
+    async def _get_region(_db, rid: uuid.UUID):
+        return region if rid == REGION_ID else None
+
+    async def _list_drawn(_db, uid: uuid.UUID, rid: uuid.UUID | None):
+        return []
+
+    async def _create_drawn(db, **kwargs):
+        geom = kwargs["geom"]
+        ah = round(polygon_area_hectares_wgs84(geom), 4)
+        return SimpleNamespace(
+            id=uuid.UUID("22222222-2222-2222-2222-222222222222"),
+            user_id=kwargs["user_id"],
+            region_id=kwargs["region_id"],
+            name=kwargs["name"],
+            geom=geom,
+            area_ha=ah,
+            extra=kwargs["extra"],
+            created_at=datetime(2026, 4, 11, tzinfo=timezone.utc),
+        )
+
+    async def _list_drawn_for_region(_db, user_id: uuid.UUID, region_id: uuid.UUID):
+        return []
+
+    async def _get_drawn_for_region(_db, parcel_id: uuid.UUID, user_id: uuid.UUID, region_id: uuid.UUID):
+        return None
+
+    monkeypatch.setattr("app.api.v1.agri.agri_repo.get_region", _get_region)
+    monkeypatch.setattr("app.api.v1.agri.agri_repo.list_drawn_parcels_for_user", _list_drawn)
+    monkeypatch.setattr(
+        "app.api.v1.agri.agri_repo.list_drawn_parcels_for_region_and_user", _list_drawn_for_region
+    )
+    monkeypatch.setattr(
+        "app.api.v1.agri.agri_repo.get_drawn_parcel_for_user_region", _get_drawn_for_region
+    )
+    monkeypatch.setattr("app.api.v1.agri.agri_repo.create_drawn_parcel", _create_drawn)
+
+    async def _resolve_drawn_no_db(_db, drawn_parcel_id, index_key, date_from, date_to):
+        from app.services import agri_repo as _ar
+
+        raw = _ar.synthetic_drawn_index_series(drawn_parcel_id).get(index_key, [])
+        out: list[dict] = []
+        for od, val, q in raw:
+            if date_from is not None and od < date_from:
+                continue
+            if date_to is not None and od > date_to:
+                continue
+            out.append({"date": od.isoformat(), "value": val, "quality": q})
+        return out
+
+    monkeypatch.setattr(
+        "app.api.v1.agri.agri_repo.resolve_drawn_index_timeseries_point_dicts",
+        _resolve_drawn_no_db,
+    )
+
     app.dependency_overrides[get_db] = _fake_db
     app.dependency_overrides[get_current_auth_user] = _fake_user
     try:
@@ -197,6 +282,47 @@ def agri_client(monkeypatch: pytest.MonkeyPatch) -> TestClient:
 def test_agri_requires_auth() -> None:
     client = TestClient(app)
     assert client.get("/api/v1/agri/demo-bundle").status_code == 401
+    assert client.post("/api/v1/agri/drawn-parcels", json={"geometry": {}}).status_code == 401
+
+
+def test_agri_demo_bundle_merges_drawn_parcels(
+    agri_client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from app.api.v1 import agri as agri_mod
+
+    did = uuid.UUID("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")
+
+    async def _list_drawn_for_region(_db, user_id: uuid.UUID, region_id: uuid.UUID):
+        if region_id != REGION_ID:
+            return []
+        return [
+            SimpleNamespace(
+                id=did,
+                name="圈地 1",
+                area_ha=None,
+                geom={
+                    "type": "Polygon",
+                    "coordinates": [
+                        [[116.0, 39.0], [116.01, 39.0], [116.01, 39.01], [116.0, 39.01], [116.0, 39.0]]
+                    ],
+                },
+            )
+        ]
+
+    monkeypatch.setattr(agri_mod.agri_repo, "list_drawn_parcels_for_region_and_user", _list_drawn_for_region)
+    r = agri_client.get("/api/v1/agri/demo-bundle")
+    assert r.status_code == 200
+    data = r.json()
+    assert len(data["parcels"]["features"]) == 5
+    drawn = [f for f in data["parcels"]["features"] if f["properties"].get("source") == "drawn"]
+    assert len(drawn) == 1
+    assert drawn[0]["properties"]["id"] == str(did)
+    assert drawn[0]["properties"]["area_ha"] is not None
+    assert float(drawn[0]["properties"]["area_ha"]) > 0
+    assert str(did) in data["timeseries"]
+    ts_drawn = data["timeseries"][str(did)]
+    assert set(ts_drawn.keys()) == {"ndvi", "evi", "ndwi"}
+    assert len(ts_drawn["ndvi"]) == 6
 
 
 def test_agri_demo_bundle_shape(agri_client: TestClient) -> None:
@@ -210,7 +336,9 @@ def test_agri_demo_bundle_shape(agri_client: TestClient) -> None:
     ids = {f["properties"]["id"] for f in data["parcels"]["features"]}
     assert ids == {"p1", "p2", "p3", "p4"}
     assert set(data["timeseries"].keys()) == {"p1", "p2", "p3", "p4"}
-    assert len(data["timeseries"]["p1"]) == 6
+    assert set(data["timeseries"]["p1"].keys()) == {"ndvi", "evi", "ndwi"}
+    assert len(data["timeseries"]["p1"]["ndvi"]) == 6
+    assert data["meta"].get("supported_indices")
 
 
 def test_agri_regions(agri_client: TestClient) -> None:
@@ -229,10 +357,128 @@ def test_agri_timeseries(agri_client: TestClient) -> None:
     assert body["index_key"] == "ndvi"
     assert len(body["points"]) == 6
     assert body["points"][0]["date"] == "2025-05-01"
+    assert body["points"][0]["value"] == pytest.approx(0.28)
     assert body["points"][0]["ndvi"] == pytest.approx(0.28)
+
+
+def test_agri_timeseries_drawn_parcel_uuid(agri_client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    from app.api.v1 import agri as agri_mod
+
+    did = uuid.UUID("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb")
+
+    async def _get_drawn(_db, parcel_id: uuid.UUID, user_id: uuid.UUID, region_id: uuid.UUID):
+        if parcel_id == did and region_id == REGION_ID:
+            return SimpleNamespace(id=did)
+        return None
+
+    monkeypatch.setattr(agri_mod.agri_repo, "get_drawn_parcel_for_user_region", _get_drawn)
+    r = agri_client.get(f"/api/v1/agri/parcels/{did}/timeseries")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["parcel_id"] == str(did)
+    assert len(body["points"]) == 6
+    assert body["points"][0]["value"] is not None
 
 
 def test_agri_parcels_geojson(agri_client: TestClient) -> None:
     r = agri_client.get("/api/v1/agri/parcels")
     assert r.status_code == 200
     assert r.json()["type"] == "FeatureCollection"
+
+
+def test_agri_drawn_parcel_create_uses_default_region_when_omitted(agri_client: TestClient) -> None:
+    geom = {
+        "type": "Polygon",
+        "coordinates": [[[116.2, 39.8], [116.21, 39.8], [116.21, 39.81], [116.2, 39.81], [116.2, 39.8]]],
+    }
+    r = agri_client.post("/api/v1/agri/drawn-parcels", json={"name": "无 region", "geometry": geom})
+    assert r.status_code == 201
+    data = r.json()
+    assert data["region_id"] == str(REGION_ID)
+    assert "parcel_feature" in data and data["parcel_feature"]["type"] == "Feature"
+    assert data["parcel_feature"]["properties"]["source"] == "drawn"
+    assert data["timeseries_key"] == data["parcel_feature"]["properties"]["id"]
+    assert data["area_ha"] == data["parcel_feature"]["properties"]["area_ha"]
+    assert set(data["timeseries_by_index"].keys()) == {"ndvi", "evi", "ndwi"}
+    assert len(data["timeseries_by_index"]["ndvi"]) == 6
+
+
+def test_agri_drawn_parcel_create(agri_client: TestClient) -> None:
+    geom = {
+        "type": "Polygon",
+        "coordinates": [[[116.3, 39.9], [116.31, 39.9], [116.31, 39.91], [116.3, 39.91], [116.3, 39.9]]],
+    }
+    r = agri_client.post(
+        "/api/v1/agri/drawn-parcels",
+        json={"region_id": str(REGION_ID), "name": "测试圈地", "geometry": geom},
+    )
+    assert r.status_code == 201
+    data = r.json()
+    assert data["name"] == "测试圈地"
+    assert data["region_id"] == str(REGION_ID)
+    assert data["geometry"]["type"] == "Polygon"
+    assert data["parcel_feature"]["properties"]["name"] == "测试圈地"
+    assert isinstance(data["area_ha"], (int, float))
+    assert data["area_ha"] > 0
+    assert r.headers.get("cache-control", "").lower().find("no-store") >= 0
+
+
+def test_agri_demo_bundle_has_no_store_header(agri_client: TestClient) -> None:
+    r = agri_client.get("/api/v1/agri/demo-bundle")
+    assert r.status_code == 200
+    assert r.headers.get("cache-control", "").lower().find("no-store") >= 0
+
+
+def test_agri_drawn_parcel_invalid_geometry(agri_client: TestClient) -> None:
+    r = agri_client.post(
+        "/api/v1/agri/drawn-parcels",
+        json={
+            "geometry": {
+                "type": "LineString",
+                "coordinates": [[116.3, 39.9], [116.31, 39.9]],
+            }
+        },
+    )
+    assert r.status_code == 422
+
+
+def test_agri_drawn_parcel_region_not_found(agri_client: TestClient) -> None:
+    geom = {
+        "type": "Polygon",
+        "coordinates": [[[116.3, 39.9], [116.31, 39.9], [116.31, 39.91], [116.3, 39.91], [116.3, 39.9]]],
+    }
+    missing = uuid.UUID("ffffffff-ffff-ffff-ffff-ffffffffffff")
+    r = agri_client.post(
+        "/api/v1/agri/drawn-parcels",
+        json={"region_id": str(missing), "geometry": geom},
+    )
+    assert r.status_code == 404
+
+
+def test_agri_drawn_parcel_list(agri_client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    from app.api.v1 import agri as agri_mod
+
+    async def _list_drawn(_db, uid: uuid.UUID, rid: uuid.UUID | None):
+        return [
+            SimpleNamespace(
+                id=uuid.UUID("33333333-3333-3333-3333-333333333333"),
+                name="A",
+                region_id=REGION_ID,
+                area_ha=None,
+                geom={
+                    "type": "Polygon",
+                    "coordinates": [
+                        [[116.0, 39.0], [116.01, 39.0], [116.01, 39.01], [116.0, 39.01], [116.0, 39.0]]
+                    ],
+                },
+                created_at=datetime(2026, 4, 11, tzinfo=timezone.utc),
+            )
+        ]
+
+    monkeypatch.setattr(agri_mod.agri_repo, "list_drawn_parcels_for_user", _list_drawn)
+    r = agri_client.get(f"/api/v1/agri/drawn-parcels?region_id={REGION_ID}")
+    assert r.status_code == 200
+    fc = r.json()
+    assert fc["type"] == "FeatureCollection"
+    assert len(fc["features"]) == 1
+    assert fc["features"][0]["properties"]["name"] == "A"

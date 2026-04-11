@@ -54,6 +54,8 @@ def upgrade() -> None:
         ["uid"],
         ondelete="CASCADE",
     )
+    op.drop_index(op.f("ix_user_roles_user_id"), table_name="user_roles", if_exists=True)
+    op.drop_index(op.f("ix_user_roles_role_id"), table_name="user_roles", if_exists=True)
     op.create_index(op.f("ix_user_roles_user_id"), "user_roles", ["user_id"], unique=False)
     op.create_index(op.f("ix_user_roles_role_id"), "user_roles", ["role_id"], unique=False)
 

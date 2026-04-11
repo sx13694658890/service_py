@@ -30,13 +30,28 @@ uv run python -c "from app.core.security import hash_password; print(hash_passwo
 执行方式（在项目根目录 `server_python` 下）：
 
 ```bash
-PYTHONPATH=src uv run python scripts/seed_demo_messages.py 你的邮箱@example.com
+PYTHONPATH=  uv run python scripts/seed_demo_messages.py sxl5253999@gmail.com
 ```
 
 也可用环境变量：
 
 ```bash
 SEED_DEMO_MESSAGES_EMAIL=你的邮箱@example.com PYTHONPATH=src uv run python scripts/seed_demo_messages.py
+```
+### 4.2 常用命令（Alembic）
+
+```bash
+# 生成迁移（自动对比模型与数据库，生成后务必人工审阅）
+uv run alembic revision --autogenerate -m "describe_change"
+
+# 升级到最新
+uv run alembic upgrade head
+
+# 降级一步
+uv run alembic downgrade -1
+
+# 查看当前版本
+uv run alembic current
 ```
 
 说明：
