@@ -11,6 +11,7 @@ from app.api.v1.router import router as v1_router
 from app.core.config import settings
 from app.core.db import engine
 from app.knowledge.bundle import init_knowledge_bundle
+from app.services import message_hub
 from app.services.help_document_files import uploaded_help_docs_root
 
 
@@ -35,7 +36,9 @@ _DOCS_UPLOAD_MULTIPART_HINT = (
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     init_knowledge_bundle()
+    await message_hub.init_redis(settings.redis_url)
     yield
+    await message_hub.close_redis()
     await engine.dispose()
 
 

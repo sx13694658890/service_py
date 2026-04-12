@@ -78,9 +78,10 @@
 
 ## 6. 站内通知 SSE（`/messages/stream`）
 
-- 需 **Bearer**；浏览器可用原生 `EventSource`（GET）。
+配置环境变量 **`REDIS_URL`**（如 `redis://127.0.0.1:6379/0`）后，服务端通过 **Redis Pub/Sub** 跨 Worker 推送；未配置时仅进程内实时。事件 JSON 含 `type`：`notification` | `unread_count` | `heartbeat`。
+
+- 需 **Bearer**；浏览器可用原生 `EventSource`（GET）；若无法带 Header，可用 `fetch` + stream 解析（同 AI SSE）。
 - `data:` 后为 JSON，`type` 取值：`notification`（含 `item`）、`unread_count`、`heartbeat`。
-- 多 Worker / 多实例下仅推送到**连接所在进程**的订阅者；跨进程需消息队列（当前未做）。
 
 ---
 

@@ -26,6 +26,7 @@ dependencies = [
     "PyYAML>=6.0",
     "rank-bm25>=0.2",
     "mammoth>=1.6",
+    "redis[hiredis]>=5",
 ]
 
 [project.optional-dependencies]

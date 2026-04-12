@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import asyncio
-import json
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -104,17 +102,8 @@ async def messages_stream(current: AuthUser = Depends(get_current_auth_user)) ->
     uid = current.user_id
 
     async def event_bytes():
-        q = await message_hub.subscribe(uid)
-        try:
-            while True:
-                try:
-                    line = await asyncio.wait_for(q.get(), timeout=25.0)
-                    yield f"data: {line}\n\n"
-                except asyncio.TimeoutError:
-                    hb = json.dumps(message_hub.heartbeat_payload(), ensure_ascii=False)
-                    yield f"data: {hb}\n\n"
-        finally:
-            await message_hub.unsubscribe(uid, q)
+        async for line in message_hub.iter_sse_payload_lines(uid):
+            yield f"data: {line}\n\n"
 
     return StreamingResponse(
         event_bytes(),

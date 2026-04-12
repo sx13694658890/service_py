@@ -150,12 +150,11 @@
 
 ### 6.2 投递方式
 
-MVP 采用“应用内同步调用”：
-
-- 业务代码在事务提交后调用通知服务；
-- 或通过轻量事件函数（如 `emit_message_event(...)`）做解耦。
-
-后续可演进到消息队列（如 Redis Stream / Kafka）异步投递。
+- 业务代码在事务提交后调用通知服务（`create_message_and_dispatch` 等），写库成功后**同步**调用 `message_hub.publish`。
+- **Redis 已接入时**（环境变量 `REDIS_URL`，如 `redis://127.0.0.1:6379/0`）：
+  - **Pub/Sub**：频道 `msg:notify:{user_id}`，供各 Worker 上挂起的 `GET /messages/stream` 长连接即时收到事件。
+  - **Stream**：`msg:bus` 追加同一条 JSON（`MAXLEN ~8000`），作轻量消息总线，便于观测或后续独立消费者扩展。
+- **未配置或 Redis 不可用时**：自动回退**进程内** `asyncio.Queue` 分发（与单进程部署行为一致，多 Worker 时仅连接所在进程内 SSE 实时）。
 
 ---
 
@@ -163,16 +162,13 @@ MVP 采用“应用内同步调用”：
 
 ### Phase 1（先上线）
 
-- 前端轮询：
-  - 列表页按需拉取
-  - Header 未读数每 30~60 秒刷新
+- 列表页按需 `GET /messages`；未读角标可短间隔拉 `GET /messages/unread-count`（兜底）。
 
-### Phase 2（增强）
+### Phase 2（当前落地）
 
-- 增加 SSE：
-  - `GET /api/v1/messages/stream`
+- **SSE**：`GET /api/v1/messages/stream`
   - 事件类型：`notification`, `unread_count`, `heartbeat`
-- 新消息到达时推送增量，前端本地合并。
+- **Redis**：多实例 / 多 Worker 下仍能通过 Pub/Sub 将推送送达**任意** Worker 上的 SSE 连接；前端以 SSE 为主、轮询为兜底即可。
 
 ---
 
@@ -222,18 +218,19 @@ MVP 采用“应用内同步调用”：
 
 ### M3（可选）
 
-- SSE 实时推送
 - 管理端通知投放能力（广播/定向）
+- 基于 `msg:bus` Stream 的独立消费任务（异步落库/外发等）
 
 ---
 
 ## 11. 前端对接最小契约
 
 - 右上角铃铛：
-  - 页面加载调用 `GET /messages/unread-count`
-  - 打开通知抽屉调用 `GET /messages`
+  - 登录后建立 **`GET /messages/stream`（SSE）**，监听 `notification` / `unread_count` 即时更新角标与列表增量。
+  - 兜底：定时 `GET /messages/unread-count`（如 60s）或焦点/路由切换时刷新。
+  - 打开通知抽屉：`GET /messages` 拉第一页。
 - 用户点击单条后调用 `POST /messages/{id}/read`
 - “全部已读”按钮调用 `POST /messages/read-all`
 - 删除调用 `DELETE /messages/{id}`
 
-建议前端先实现轮询版本，等 SSE 可用后再切换为“推送 + 兜底轮询”。
+**运维**：生产环境配置 `REDIS_URL` 指向 Redis，保证多 Worker 下 SSE 推送一致。

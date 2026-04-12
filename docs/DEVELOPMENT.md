@@ -226,6 +226,18 @@ uv run uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 
 （若包名为 `src` 布局，需配置 `PYTHONPATH` 或使用 `uv run` 的 script 入口，以实际 `pyproject.toml` 为准。）
 
+### 8.1 站内通知推送（自动化 + 连真服务）
+
+- **自动化**（不启 HTTP，验证 `message_hub` 与 SSE 共用队列）：`uv run pytest tests/test_messages_sse_push.py -v`
+- **连本机已启动的 API**（打印 SSE 行，需开发依赖中的 `httpx`）：
+
+```bash
+export TOKEN='你的 JWT'
+uv run python scripts/messages_sse_smoke.py
+```
+
+另开终端触发改密等会投递通知的接口后，脚本应出现 `data:` 后的 `notification` / `unread_count` JSON。
+
 ---
 
 ## 9. 后续实现 checklist

@@ -34,6 +34,9 @@ class Settings(BaseSettings):
     jwt_algorithm: str = "HS256"
     jwt_access_token_expire_days: int = 7
 
+    # 站内通知：Redis Pub/Sub + Stream（多 Worker SSE）；未配置则回退进程内队列
+    redis_url: str | None = None
+
     # AI 问答（DeepSeek OpenAI 兼容；未配置 key 时接口返回 503）
     openai_api_key: str | None = None
     openai_api_base: str = "https://api.deepseek.com"
